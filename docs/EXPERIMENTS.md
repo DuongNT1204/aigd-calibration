@@ -13,6 +13,20 @@ The experiments should always compare two groups of metrics:
 - **Classification / discrimination:** can the model separate real and fake images?
 - **Calibration / reliability:** are the predicted probabilities trustworthy?
 
+## Controlled Experiment Design
+
+For fair comparison, all models are trained on the same data splits
+(train/val/test_id/test_ood) with the same augmentation pipeline and
+evaluation protocol. Optimizer settings (learning rate, scheduler) are
+tuned per backbone to ensure each model is trained under its best-known
+configuration. The only variable changed between experiments within the
+same backbone is the loss function or training strategy.
+
+This is a deliberate design choice: the thesis focuses on the effect of
+**calibration methods**, not augmentation differences. Fixing the data
+splits and augmentation pipeline isolates calibration as the variable of
+interest, which is the standard approach for ablation studies in ML papers.
+
 ## Core Evaluation Settings
 
 Every method should be evaluated on the same splits:
