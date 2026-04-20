@@ -100,11 +100,15 @@ Existing example configs:
 
 ```text
 configs/splits/cross_generator.yaml
+configs/baselines/clip_ce.yaml
+configs/baselines/clip_bce.yaml
+configs/baselines/clip_focal.yaml
+configs/baselines/clip_bsce.yaml
+configs/baselines/clip_bsce_adaptive.yaml
+configs/baselines/clip_label_smoothing.yaml
+configs/baselines/clip_diff_dml.yaml
 configs/baselines/resnet50_bce.yaml
 configs/baselines/resnet50_bce_ddp.yaml
-configs/baselines/vit_label_smoothing.yaml
-configs/baselines/clip_bsce.yaml
-configs/baselines/clip_diff_dml.yaml
 configs/calibration/temperature.yaml
 ```
 
@@ -232,32 +236,44 @@ training:
   kl_weight: 1.0
 
 model:
-  type: clip
-  name: openai/clip-vit-large-patch14
-  freeze_backbone: true
-  num_frozen_blocks: 16
-
-model_aux:
-  type: clip
-  name: openai/clip-vit-large-patch14
-  freeze_backbone: true
-  num_frozen_blocks: 20
+  primary:
+    type: clip
+    name: openai/clip-vit-large-patch14
+    freeze_backbone: true
+    num_frozen_blocks: 16
+    train_layer_norm: true
+    dropout: 0.2
+    num_classes: 2
+  auxiliary:
+    type: clip
+    name: openai/clip-vit-large-patch14
+    freeze_backbone: true
+    num_frozen_blocks: 20
+    train_layer_norm: true
+    dropout: 0.2
+    num_classes: 2
 
 optimizer:
+  name: adamw
   lr: 0.0001
+  lr_backbone: 0.00001
+  lr_head: 0.0001
 
 scheduler:
   name: cosine
 
 optimizer_aux:
+  name: adamw
   lr: 0.00001
+  lr_backbone: 0.000001
+  lr_head: 0.00001
 
 scheduler_aux:
   name: none
 ```
 
-For Diff-DML, `model` is the primary model `f`, and `model_aux` is the
-auxiliary model `g`. Only `model_f` is used at inference.
+For Diff-DML, `model.primary` is the supervised model `f` used at inference.
+`model.auxiliary` is `g`, used only during training for KL agreement.
 
 ### 3. Evaluate A Trained Run
 

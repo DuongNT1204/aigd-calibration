@@ -1,121 +1,138 @@
 # AIGD Calibration
 
-Research code for the thesis topic:
+Research code for the thesis:
 
-> Calibration methods for AI-generated image detection under in-domain and cross-generator OOD settings.
+> **Calibration methods for AI-generated image detection under in-domain and cross-generator OOD settings.**
 
-The goal is to compare AI-generated image detectors not only by classification performance, but also by the reliability of their predicted probabilities.
+The goal is to compare AIGD detectors not only by classification performance (AUC, Accuracy, MCC) but also by the reliability of their predicted probabilities (ECE, Brier Score, NLL).
 
-This project supports two kinds of calibration experiments:
+## Hypothesis
 
-- **Train-time calibration:** Label Smoothing, Focal Loss, BSCE, Adaptive BSCE, Diff-DML.
-- **Post-hoc calibration:** Temperature Scaling fitted on validation logits only.
+> A CE-trained baseline produces overconfident, unreliable probabilities on unseen generators (high ECE, high Brier). Applying train-time calibration methods reduces ECE and Brier while maintaining or improving accuracy.
 
-## Project Status
+**Validated** — see [`outputs/results.md`](outputs/results.md) for full results.
 
-This is a base research scaffold. It defines the project structure, PyTorch Lightning modules, CLI commands, config format, metrics, and artifact layout. It is not yet a finished benchmark with prepared datasets or trained checkpoints.
-
-Package layout:
-
-The source code imports modules as `aigd_calibration.*`. The Python package layout is:
-
-```text
-src/
-└── aigd_calibration/
-    ├── cli/
-    ├── config/
-    ├── data/
-    ├── models/
-    ├── methods/
-    ├── lightning/
-    ├── evaluation/
-    ├── artifacts/
-    ├── training/
-    └── utils/
-```
-
-## Research Workflow
-
-For the detailed experiment protocol, see [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md).
-
-The intended experiment flow is:
-
-```text
-metadata
-  -> cross-generator splits
-  -> train baseline detectors
-  -> evaluate ID/OOD logits
-  -> compute Accuracy/AUC/AP/F1/ECE/NLL/Brier
-  -> apply calibration methods
-  -> compare trade-off between discrimination and calibration
-```
-
-Typical study plan:
-
-1. Train 3-4 base AIGD detectors, for example ResNet/CNN, ViT, CLIP, ConvNeXt.
-2. Evaluate each baseline on `test_id` and `test_ood`.
-3. Identify which models have good AUC but poor calibration.
-4. Apply train-time calibration methods such as Label Smoothing, BSCE, Adaptive BSCE, and Diff-DML.
-5. Apply post-hoc Temperature Scaling using validation logits only.
-6. Compare ECE, Brier Score, NLL, AUC, AP, F1, and reliability diagrams.
+---
 
 ## Repository Layout
 
 ```text
 AIGD_Calibration/
 ├── configs/
-│   ├── baselines/              # Training configs for baseline/calibrated models
-│   ├── calibration/            # Post-hoc calibration configs
-│   └── splits/                 # Dataset split configs
-│
+│   ├── baselines/              # Training configs for each experiment
+│   │   ├── clip_ce.yaml        # CE loss (baseline)
+│   │   ├── clip_bce.yaml       # Binary CE
+│   │   ├── clip_focal.yaml     # Focal Loss (γ=2.0)
+│   │   ├── clip_bsce.yaml      # Balanced Softmax CE
+│   │   ├── clip_bsce_adaptive.yaml
+│   │   ├── clip_label_smoothing.yaml
+│   │   └── clip_diff_dml.yaml  # Differentiated Deep Mutual Learning
+│   ├── calibration/
+│   │   └── temperature.yaml    # Post-hoc temperature scaling
+│   └── splits/
+│       └── cross_generator.yaml
 ├── data/
-│   ├── raw/                    # Optional local image storage
+│   ├── raw/                    # Image files (not tracked)
 │   ├── metadata/               # metadata.jsonl
-│   └── splits/                 # train/val/test_id/test_ood JSONL files
-│
-├── outputs/                    # Experiment outputs
-│
+│   └── splits/                 # train/val/test_id/test_ood JSONL
+├── docs/
+│   ├── CLI.md                  # Full CLI reference
+│   └── EXPERIMENTS.md          # Experiment protocol and results
+├── outputs/                    # Experiment outputs (not tracked)
+│   └── results.md              # Summary of results and analysis
 └── src/aigd_calibration/
     ├── cli/                    # aigd split/train/eval/calibrate/report
-    ├── config/                 # YAML loading and validation
-    ├── data/                   # Dataset, DataModule, metadata, transforms, splits
-    ├── models/                 # timm and CLIP model builders
+    ├── config/                 # YAML loading
+    ├── data/                   # Dataset, DataModule, transforms, splits
+    ├── models/                 # CLIP and timm model builders
     ├── methods/
-    │   ├── train_time/         # Losses and Lightning strategies
-    │   └── post_hoc/           # Temperature scaling, identity calibrator
+    │   ├── train_time/         # Losses + strategies (standard, diff_dml)
+    │   └── post_hoc/           # Temperature scaling
     ├── lightning/              # Trainer, callbacks, loggers, checkpoints
     ├── evaluation/             # Metrics, reliability diagrams, reports
     ├── artifacts/              # Logits, tables, run directories
-    ├── training/               # Optimizer/scheduler helpers
-    └── utils/                  # IO, seed, device, logging helpers
+    ├── training/               # Optimizer/scheduler builders
+    └── utils/                  # IO, seed, device, logging
 ```
+
+---
+
+## Installation
+
+### Requirements
+
+- Python 3.10+
+- CUDA 12.4 (tested with 2x RTX 3090)
+
+### Step 1: Create a virtual environment
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+Or with conda:
+
+```bash
+conda create -n aigd python=3.10 -y
+conda activate aigd
+```
+
+### Step 2: Install PyTorch with CUDA 12.4
+
+```bash
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+```
+
+> If you have a different CUDA version, replace `cu124` with the appropriate tag (e.g. `cu121`, `cu118`).
+> Check your driver version with `nvidia-smi`.
+
+### Step 3: Install dependencies
+
+```bash
+pip install -r requirements.txt
+pip install tensorboard
+```
+
+### Step 4: Install the package in editable mode
+
+```bash
+pip install -e .
+```
+
+Verify:
+
+```bash
+aigd --help
+```
+
+---
 
 ## Data Format
 
-The code is metadata-driven. Training does not depend on folder names directly.
-
-Each image should have one metadata row:
+The code is metadata-driven. Each image needs one JSONL row:
 
 ```json
-{"image_path": "/abs/path/to/image.png", "label": "synthetic", "generator": "stable_diffusion", "source": "my_dataset"}
+{"image_path": "/abs/path/to/image.png", "label": 1, "generator": "stable_diffusion_v1_4", "source": "GenImage"}
 ```
 
-Required fields:
+| Field | Required | Description |
+|-------|----------|-------------|
+| `image_path` | yes | Absolute or relative path to the image |
+| `label` | yes | `0` or `real` for real; `1`, `synthetic`, or `fake` for AI-generated |
+| `generator` | yes | Generator name — used for OOD splits |
+| `source` | optional | Dataset name |
 
-- `image_path`: absolute path, or path relative to the split file.
-- `label`: accepted real labels are `real` or `0`; accepted fake labels are `synthetic`, `fake`, `ai`, `generated`, or `1`.
-- `generator`: generator/source name. This is required for clean cross-generator OOD splits.
-
-Recommended data layout:
+### Recommended data layout
 
 ```text
 data/
 ├── raw/
 │   ├── real/
 │   └── fake/
-│       ├── stable_diffusion/
+│       ├── stable_diffusion_v1_4/
 │       ├── midjourney/
-│       └── dalle3/
+│       └── biggan/
 ├── metadata/
 │   └── metadata.jsonl
 └── splits/
@@ -125,255 +142,113 @@ data/
     └── test_ood.jsonl
 ```
 
-The images may also live outside this repository. Only `image_path` must be correct.
+---
 
-## Installation
+## Workflow
 
-Create an environment, then install dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
-If `pyproject.toml` is present, install the package in editable mode:
+### 1. Create splits
 
 ```bash
-pip install -e .
+aigd split --config configs/splits/cross_generator.yaml
 ```
 
-Without editable install, run commands with:
-
-```bash
-PYTHONPATH=src python -m aigd_calibration.cli.main --help
-```
-
-After editable install, use:
-
-```bash
-aigd --help
-```
-
-## CLI Commands
-
-For the full command reference, workflow, inputs, outputs, and leakage-safe
-protocol, see:
-
-```text
-docs/CLI.md
-```
-
-The CLI has five main commands:
-
-```bash
-aigd split      # create train/val/test_id/test_ood JSONL splits
-aigd train      # train a Lightning detector
-aigd eval       # export logits and compute metrics
-aigd calibrate  # fit/apply post-hoc calibration
-aigd report     # collect metrics into a summary table
-```
-
-## Step 1: Create Cross-Generator Splits
-
-Edit:
-
-```text
-configs/splits/cross_generator.yaml
-```
-
-Example:
+Edit `configs/splits/cross_generator.yaml` to set which generators are held out for OOD:
 
 ```yaml
 split:
   metadata: data/metadata/metadata.jsonl
   out_dir: data/splits
   ood_generators:
-    - stable_diffusion
-    - dalle3
+    - Midjourney
+    - BigGAN
+    - GLIDE
   seed: 42
   val_ratio: 0.1
   test_id_ratio: 0.1
   ood_real_ratio: 0.1
 ```
 
-Run:
+### 2. Train
 
 ```bash
-aigd split --config configs/splits/cross_generator.yaml
+aigd train --config configs/baselines/clip_ce.yaml
 ```
 
-This writes:
-
-```text
-data/splits/train.jsonl
-data/splits/val.jsonl
-data/splits/test_id.jsonl
-data/splits/test_ood.jsonl
-data/splits/summary.json
-```
-
-The OOD fake generators are held out from training.
-
-## Step 2: Train Baselines
-
-Example configs:
-
-```text
-configs/baselines/resnet50_bce.yaml
-configs/baselines/vit_label_smoothing.yaml
-configs/baselines/clip_bsce.yaml
-configs/baselines/clip_diff_dml.yaml
-```
-
-Train one model:
+### 3. Evaluate
 
 ```bash
-aigd train --config configs/baselines/resnet50_bce.yaml
+aigd eval --run outputs/clip_ce --split val
+aigd eval --run outputs/clip_ce --split test_id
+aigd eval --run outputs/clip_ce --split test_ood
 ```
 
-Train several models:
+### 4. Post-hoc calibration (Temperature Scaling)
 
-```bash
-aigd train --config configs/baselines/resnet50_bce.yaml
-aigd train --config configs/baselines/vit_label_smoothing.yaml
-aigd train --config configs/baselines/clip_bsce.yaml
-aigd train --config configs/baselines/clip_diff_dml.yaml
-```
-
-## Step 3: Evaluate ID and OOD
-
-Export logits and compute metrics:
-
-```bash
-aigd eval --run outputs/resnet50_bce --split val
-aigd eval --run outputs/resnet50_bce --split test_id
-aigd eval --run outputs/resnet50_bce --split test_ood
-```
-
-Each evaluation writes:
-
-```text
-outputs/<experiment>/logits/<split>.jsonl
-outputs/<experiment>/metrics/<split>.json
-outputs/<experiment>/figures/reliability_<split>.png
-```
-
-Saved logits are the contract between evaluation, post-hoc calibration, and reporting. This prevents test-set leakage.
-
-## Step 4: Post-Hoc Temperature Scaling
-
-Temperature Scaling must be fitted on validation logits only.
-
-Edit:
-
-```text
-configs/calibration/temperature.yaml
-```
-
-Example:
-
-```yaml
-calibration:
-  method: temperature
-  val_logits: outputs/resnet50_bce/logits/val.jsonl
-  apply_logits:
-    - outputs/resnet50_bce/logits/test_id.jsonl
-    - outputs/resnet50_bce/logits/test_ood.jsonl
-  out_dir: outputs/resnet50_bce/temperature
-  init_temperature: 1.0
-  max_iter: 100
-
-metrics:
-  ece_bins: 15
-```
-
-Run:
+Edit `configs/calibration/temperature.yaml` to point to your run, then:
 
 ```bash
 aigd calibrate --config configs/calibration/temperature.yaml
 ```
 
-This writes calibrated logits and metrics under:
-
-```text
-outputs/resnet50_bce/temperature/
-```
-
-## Step 5: Build Summary Tables
-
-Collect metrics across runs:
+### 5. Report
 
 ```bash
 aigd report \
-  --runs outputs/resnet50_bce outputs/clip_bsce outputs/clip_diff_dml \
+  --runs outputs/clip_ce outputs/clip_focal outputs/clip_label_smoothing \
   --output outputs/summary.csv
 ```
 
-Use this CSV as the starting point for thesis tables.
+For the full CLI reference, see [`docs/CLI.md`](docs/CLI.md).
+For the experiment protocol, see [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md).
 
-## Metrics
+---
 
-Discrimination metrics:
+## Experiment Setup
 
-- Accuracy
-- AUC
-- AP
-- F1
+All experiments use **CLIP ViT-L/14** (`openai/clip-vit-large-patch14`, 303M params) with partial fine-tuning:
 
-Calibration metrics:
+- Freeze first 16/24 transformer blocks, train the remaining 8 blocks + linear head
+- AdamW: `lr_head=1e-4`, `lr_backbone=1e-5`, `weight_decay=1e-4`
+- 2 epochs, batch size 32, 32-bit precision, 2x RTX 3090 (DDP)
 
-- ECE
-- NLL
-- Brier Score
-- Reliability diagram
+| Config | Loss / Strategy |
+|--------|----------------|
+| `clip_ce` | Cross-Entropy (baseline) |
+| `clip_bce` | Binary Cross-Entropy |
+| `clip_focal` | Focal Loss (gamma=2.0) |
+| `clip_bsce` | Balanced Softmax CE |
+| `clip_bsce_adaptive` | Adaptive BSCE |
+| `clip_label_smoothing` | Label Smoothing (epsilon=0.1) |
+| `clip_diff_dml` | Diff-DML: two-model KL mutual learning |
 
-For the thesis, compare both groups together. A model can have high AUC but poor ECE/Brier under OOD.
+---
 
-## Method Categories
+## Key Results (Test-OOD)
 
-Train-time methods:
+Full analysis and per-split tables in [`outputs/results.md`](outputs/results.md).
 
-```text
-standard + BCE/CE
-standard + Label Smoothing
-standard + Focal Loss
-standard + BSCE
-standard + Adaptive BSCE
-Diff-DML two-model training
-```
+| Method | ACC | ECE | Brier | NLL |
+|--------|-----|-----|-------|-----|
+| CE (baseline) | 0.750 | 0.153 | 0.199 | 0.770 |
+| BCE | 0.753 | 0.146 | 0.195 | 0.763 |
+| Focal | 0.767 | **0.023** | 0.161 | 0.488 |
+| BSCE | 0.787 | 0.048 | 0.155 | 0.488 |
+| BSCE Adaptive | 0.796 | 0.048 | 0.150 | 0.473 |
+| Label Smoothing | 0.823 | 0.032 | **0.123** | **0.388** |
+| Diff-DML | **0.829** | 0.050 | 0.131 | 0.425 |
 
-Post-hoc methods:
+All train-time calibration methods reduce ECE by 3-7x and Brier by 20-38% vs CE baseline, while improving OOD accuracy by 2-8%.
 
-```text
-Identity baseline
-Temperature Scaling
-```
-
-Diff-DML is implemented as a training strategy, not as a loss, because it needs two models and KL agreement during optimization. To follow the paper, keep the primary model `f` on a normal decaying LR schedule and keep the auxiliary model `g` on a lower fixed LR:
-
-```yaml
-optimizer:
-  lr: 0.0001
-
-scheduler:
-  name: cosine
-
-optimizer_aux:
-  lr: 0.00001
-
-scheduler_aux:
-  name: none
-```
+---
 
 ## Output Layout
 
-Each experiment should produce:
-
 ```text
-outputs/<experiment>/
+outputs/<experiment_name>/
 ├── config.yaml
 ├── checkpoints/
 │   ├── last.ckpt
-│   └── *.ckpt
+│   └── epoch=...ckpt
 ├── logits/
 │   ├── val.jsonl
 │   ├── test_id.jsonl
@@ -386,21 +261,42 @@ outputs/<experiment>/
 │   ├── reliability_val.png
 │   ├── reliability_test_id.png
 │   └── reliability_test_ood.png
-└── tables/
+├── logs/               # CSVLogger
+├── tb_logs/            # TensorBoard
+└── temperature/
+    ├── calibrator.json
+    ├── test_id_calibrated.jsonl
+    ├── test_id_metrics.json
+    ├── test_ood_calibrated.jsonl
+    └── test_ood_metrics.json
 ```
 
-## Common Mistakes to Avoid
+Monitor training:
 
-- Do not fit Temperature Scaling on `test_id` or `test_ood`.
-- Do not allow OOD fake generators to appear in `train.jsonl`.
-- Do not compare methods using different data splits.
-- Do not report only AUC; calibration metrics are the main research focus.
-- Do not change model, data, loss, augmentation, and split all at once unless the experiment is explicitly designed that way.
+```bash
+tensorboard --logdir outputs/<experiment_name>/tb_logs
+```
 
-## Current Next Steps
+---
 
-1. Install dependencies.
-2. Create `data/metadata/metadata.jsonl`.
-3. Generate splits with `aigd split`.
-4. Start with `resnet50_bce`, then add CLIP/ViT baselines.
-5. Evaluate ID/OOD before applying calibration methods.
+## Metrics
+
+| Metric | Type | Direction |
+|--------|------|-----------|
+| Accuracy | Classification | higher is better |
+| MCC | Classification | higher is better |
+| AUC | Classification | higher is better |
+| AP | Classification | higher is better |
+| F1 | Classification | higher is better |
+| ECE | Calibration | lower is better |
+| Brier | Calibration | lower is better |
+| NLL | Calibration | lower is better |
+
+---
+
+## Rules
+
+- Never fit temperature scaling on `test_id` or `test_ood` — only on `val`.
+- Never allow OOD generators to appear in `train.jsonl`.
+- Use the same splits for all method comparisons.
+- Report both classification and calibration metrics.

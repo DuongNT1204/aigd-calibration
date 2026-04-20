@@ -626,29 +626,41 @@ scheduler:
 
 uses linear warmup followed by cosine restarts over training steps.
 
-## Suggested Experiment Order
+## Actual Experiment Results
 
-Recommended order for the thesis:
+All 7 experiments below were run with CLIP ViT-L/14, 2 epochs, 2x RTX 3090.
+Full tables and analysis: `outputs/results.md`.
+
+### Test-OOD (cross-generator, the most important split)
+
+| Method | ACC | ECE | Brier | NLL |
+|--------|-----|-----|-------|-----|
+| CE (baseline) | 0.750 | 0.153 | 0.199 | 0.770 |
+| BCE | 0.753 | 0.146 | 0.195 | 0.763 |
+| Focal | 0.767 | **0.023** | 0.161 | 0.488 |
+| BSCE | 0.787 | 0.048 | 0.155 | 0.488 |
+| BSCE Adaptive | 0.796 | 0.048 | 0.150 | 0.473 |
+| Label Smoothing | 0.823 | 0.032 | **0.123** | **0.388** |
+| Diff-DML | **0.829** | 0.050 | 0.131 | 0.425 |
+
+Key findings:
+- CE baseline has the worst calibration (ECE=0.153) and worst OOD accuracy (0.750)
+- All train-time methods reduce ECE by 3-7x and Brier by 20-38%
+- Label Smoothing best overall: highest ACC on both ID and OOD, lowest Brier
+- Focal Loss has the best ECE on OOD but moderate accuracy
+- Diff-DML achieves the highest OOD ACC but lower ID accuracy — mutual learning regularizes for distribution shift
+- Temperature scaling helps on test_id but often hurts on test_ood (temperature fit on in-domain val does not generalize)
+
+### Suggested Experiment Order
+
+For a new thesis run:
 
 ```text
-1. ResNet50 + BCE
-2. ViT + BCE
-3. CLIP + BCE
-4. Evaluate all on ID/OOD
-5. Apply Temperature Scaling to all baselines
-6. Pick the strongest/most interesting 1-2 baselines
-7. Train Label Smoothing, BSCE, Adaptive BSCE, Diff-DML
-8. Apply Temperature Scaling on those trained models
-9. Write analysis of AUC/ECE/Brier trade-off
-```
-
-If time is limited:
-
-```text
-1. ResNet50 + BCE
-2. CLIP + BCE
-3. Temperature Scaling
-4. Label Smoothing
-5. BSCE
-6. Diff-DML if GPU/time allows
+1. CLIP + CE         (baseline — establishes ECE/Brier baseline)
+2. CLIP + Focal      (best ECE on OOD)
+3. CLIP + Label Smoothing  (best overall trade-off)
+4. CLIP + BSCE / BSCE Adaptive
+5. CLIP + Diff-DML   (best OOD accuracy)
+6. Temperature Scaling on all runs
+7. Report with aigd report
 ```
