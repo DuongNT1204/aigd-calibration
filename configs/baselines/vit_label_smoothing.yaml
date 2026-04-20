@@ -1,0 +1,58 @@
+# ViT baseline with label smoothing as train-time calibration.
+seed: 42
+output_root: outputs
+
+experiment:
+  name: vit_label_smoothing
+
+data:
+  train: data/splits/train.jsonl
+  val: data/splits/val.jsonl
+  test_id: data/splits/test_id.jsonl
+  test_ood: data/splits/test_ood.jsonl
+  image_size: 224
+  batch_size: 32
+  num_workers: 4
+  normalization: imagenet
+
+model:
+  type: timm
+  name: vit_base_patch16_224
+  pretrained: true
+  freeze_backbone: false
+  dropout: 0.1
+  num_classes: 2
+
+training:
+  strategy: standard
+  epochs: 10
+  accelerator: auto
+  devices: auto
+  lightning_strategy: auto
+  sync_batchnorm: false
+  use_distributed_sampler: true
+  precision: 32-true
+  checkpoint_metric: val/auc
+  checkpoint_mode: max
+  save_top_k: 1
+  log_every_n_steps: 20
+
+optimizer:
+  name: adamw
+  lr: 0.00005
+  lr_backbone: 0.000005
+  lr_head: 0.00005
+  weight_decay: 0.0001
+  weight_decay_head: 0.00001
+  fused: false
+
+scheduler:
+  name: none
+
+loss:
+  name: label_smoothing
+  smoothing: 0.1
+
+metrics:
+  ece_bins: 15
+  threshold: 0.5

@@ -1,0 +1,12 @@
+# Example split config for cross-generator OOD experiments.
+split:
+  metadata: data/metadata/metadata.jsonl
+  out_dir: data/splits
+  ood_generators:
+    - midjourney
+    - biggan
+    - glide
+  seed: 42
+  val_ratio: 0.1
+  test_id_ratio: 0.1
+  ood_real_ratio: 0.1

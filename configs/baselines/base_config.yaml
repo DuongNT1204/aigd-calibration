@@ -1,0 +1,381 @@
+# Reference config for AIGD calibration experiments.
+#
+# This file is intentionally verbose. It lists every experiment option that the
+# current code can read, so you can copy it and change only the fields needed
+# for a specific run.
+#
+# Default workflow:
+#   1. Create data splits with `aigd split --config <this_file>`
+#   2. Train with `aigd train --config <this_file>`
+#   3. Evaluate with `aigd eval --run outputs/<experiment.name> --split test_id`
+#   4. Optionally run post-hoc calibration with `aigd calibrate --config <this_file>`
+
+# Global random seed used by training and split generation unless overridden.
+seed: 42
+
+# Root folder for experiment outputs. A train run writes to:
+#   <output_root>/<experiment.name>/
+output_root: outputs
+
+experiment:
+  # Used as the output directory name.
+  name: base_experiment
+
+  # Free text for your notes. The code stores it in the copied run config.
+  description: "Base config for AIGD detector training and calibration."
+
+# ---------------------------------------------------------------------------
+# Dataset split creation
+# ---------------------------------------------------------------------------
+# Used only by:
+#   aigd split --config configs/baselines/base_config.yaml
+split:
+  # Input metadata file before splitting. Supported by the current loader:
+  # JSONL, JSON, or CSV. Each row should contain at least image_path/path/file
+  # and label. Optional fields: generator, model, dataset, source.
+  metadata: data/metadata/all.jsonl
+
+  # Output directory for train.jsonl, val.jsonl, test_id.jsonl, test_ood.jsonl.
+  out_dir: data/splits
+
+  # Fake generators held out from training/val/test_id and used for test_ood.
+  # Example for GenImage:
+  #   [Midjourney, BigGAN, GLIDE, ADM, VQDM, Wukong, stable_diffusion_v_1_5]
+  ood_generators: []
+
+  # Split seed. Usually keep the same as global seed.
+  seed: 42
+
+  # From in-domain data, reserve this fraction for validation.
+  val_ratio: 0.1
+
+  # From in-domain data, reserve this fraction for test_id.
+  test_id_ratio: 0.1
+
+  # Add this fraction of real images to test_ood so OOD still contains both
+  # real and fake samples.
+  ood_real_ratio: 0.1
+
+# ---------------------------------------------------------------------------
+# Data loading
+# ---------------------------------------------------------------------------
+data:
+  # JSONL split files used by train/eval.
+  # Each row should include:
+  #   image_path: path to image
+  #   label: 0 for real, 1 for fake
+  #   generator: fake generator name or real source name
+  #   source: dataset/source name
+  train: data/splits/train.jsonl
+  val: data/splits/val.jsonl
+  test_id: data/splits/test_id.jsonl
+  test_ood: data/splits/test_ood.jsonl
+
+  # Optional prediction split. `aigd eval` sets this automatically from
+  # --split, so normally leave it null.
+  predict: null
+
+  # Input image size. Common choices:
+  #   224 for ResNet/ViT/CLIP baselines
+  #   384 or 448 only if the model and GPU memory support it
+  image_size: 224
+
+  # Per-process batch size. With DDP, effective batch size is:
+  #   batch_size * number_of_gpus * accumulate_grad_batches
+  batch_size: 32
+
+  # DataLoader workers per process.
+  num_workers: 4
+
+  # Normalization mode:
+  #   imagenet -> timm/ImageNet pretrained models
+  #   clip     -> CLIP image encoder
+  #   none     -> raw tensor in [0, 1]
+  normalization: imagenet
+
+  # DataLoader behavior.
+  pin_memory: true
+  persistent_workers: true
+  shuffle_train: true
+  drop_last_train: false
+  drop_last_eval: false
+
+# ---------------------------------------------------------------------------
+# Model
+# ---------------------------------------------------------------------------
+# Standard training uses `model`.
+# Diff-DML uses `model` as primary model_f and `model_aux` as auxiliary model_g.
+# The old nested Diff-DML style is still supported:
+#   model:
+#     primary: {...}
+#     auxiliary: {...}
+model:
+  # Model family:
+  #   timm -> any timm model name, e.g. resnet50, vit_base_patch16_224
+  #   clip -> Hugging Face CLIP vision model, e.g. openai/clip-vit-large-patch14
+  type: timm
+  name: resnet50
+
+  # Load pretrained weights when supported by the model builder.
+  pretrained: true
+
+  # Output classes. Keep 2 for binary real/fake.
+  num_classes: 2
+
+  # Dropout before the classifier head.
+  dropout: 0.0
+
+  # Freeze behavior:
+  #   timm -> freeze whole backbone, train only head
+  #   clip -> use num_frozen_blocks below
+  freeze_backbone: false
+
+  # CLIP only. Used when type: clip and freeze_backbone: true.
+  #   null -> freeze all CLIP vision layers, train only head
+  #   0    -> train all CLIP transformer blocks
+  #   16   -> freeze first 16 blocks, train remaining blocks
+  #   24   -> freeze all 24 blocks for CLIP ViT-L/14
+  num_frozen_blocks: null
+
+  # CLIP only. If true, LayerNorm parameters stay trainable while freezing.
+  train_layer_norm: true
+
+# Diff-DML auxiliary model_g. Ignored when training.strategy: standard.
+# For faithful Diff-DML, model_g should be different enough to preserve
+# prediction diversity, but not much weaker than model_f.
+model_aux:
+  type: timm
+  name: resnet18
+  pretrained: true
+  num_classes: 2
+  dropout: 0.0
+  freeze_backbone: false
+  num_frozen_blocks: null
+  train_layer_norm: true
+
+# ---------------------------------------------------------------------------
+# Training / Lightning
+# ---------------------------------------------------------------------------
+training:
+  # Training strategy:
+  #   standard -> one model, one loss
+  #   diff_dml -> model_f + model_g mutual learning
+  strategy: standard
+
+  # Number of full training epochs.
+  epochs: 10
+
+  # Lightning hardware settings.
+  # Single GPU:
+  #   accelerator: gpu
+  #   devices: 1
+  #   lightning_strategy: auto
+  #
+  # Multi-GPU DDP:
+  #   accelerator: gpu
+  #   devices: 2
+  #   lightning_strategy: ddp
+  accelerator: auto
+  devices: auto
+  lightning_strategy: auto
+
+  # Precision:
+  #   32-true
+  #   16-mixed
+  #   bf16-mixed
+  precision: 32-true
+
+  # DDP/BatchNorm behavior.
+  sync_batchnorm: false
+  use_distributed_sampler: true
+
+  # Gradient and debugging controls.
+  accumulate_grad_batches: 1
+  gradient_clip_val: 0.0
+  deterministic: false
+  benchmark: false
+  fast_dev_run: false
+  num_sanity_val_steps: 2
+
+  # Use a float in [0, 1] for fraction of batches, or an int for exact count.
+  limit_train_batches: 1.0
+  limit_val_batches: 1.0
+  limit_test_batches: 1.0
+  limit_predict_batches: 1.0
+
+  # Logging/checkpointing.
+  log_every_n_steps: 20
+  checkpoint_metric: val/auc
+  checkpoint_mode: max
+  save_top_k: 1
+
+  # Diff-DML only. Weight for KL term in model_f loss:
+  #   loss_f = CE(model_f) + kl_weight * KL(model_g || model_f)
+  # model_g is trained with KL(model_f || model_g), no CE.
+  kl_weight: 1.0
+
+# ---------------------------------------------------------------------------
+# Optimizer for standard training and Diff-DML model_f
+# ---------------------------------------------------------------------------
+optimizer:
+  # Supported:
+  #   adamw -> recommended default for pretrained backbones
+  #   adam
+  #   sgd
+  name: adamw
+
+  # Base LR. If lr_backbone/lr_head are omitted, both use this value.
+  lr: 0.0001
+
+  # Optional BitMind-style parameter groups.
+  # Backbone usually smaller; classifier head usually larger.
+  lr_backbone: 0.00001
+  lr_head: 0.0001
+
+  # Weight decay. AdamW applies it decoupled.
+  weight_decay: 0.0001
+  weight_decay_head: 0.00001
+
+  # SGD only.
+  momentum: 0.9
+
+  # AdamW only. Keep false unless your PyTorch/CUDA supports fused AdamW.
+  fused: false
+
+# ---------------------------------------------------------------------------
+# Scheduler for standard training and Diff-DML model_f
+# ---------------------------------------------------------------------------
+scheduler:
+  # Supported:
+  #   none
+  #   cosine
+  #   step
+  #   multistep
+  #   warmup_cosine
+  #   warmup_cosine_restarts
+  name: none
+
+  # cosine: usually equal to training.epochs.
+  t_max: 10
+
+  # cosine and warmup_cosine.
+  eta_min: 0.000001
+
+  # step.
+  step_size: 50
+
+  # step and multistep.
+  gamma: 0.1
+
+  # multistep. Paper-style Diff-DML used 250 epochs with LR decay after the
+  # first 100 epochs and then every 50 epochs.
+  milestones: [100, 150, 200]
+
+  # warmup_cosine / warmup_cosine_restarts.
+  warmup_ratio: 0.03
+  min_warmup_steps: 100
+  start_factor: 0.01
+  t_mult: 1
+
+# ---------------------------------------------------------------------------
+# Diff-DML optimizer/scheduler for model_g
+# ---------------------------------------------------------------------------
+# Ignored when training.strategy: standard.
+# If omitted, model_g reuses optimizer/scheduler, but that is less faithful to
+# the Diff-DML paper. The paper's DTS idea is:
+#   model_f -> normal LR decay
+#   model_g -> lower fixed LR, no decay
+optimizer_aux:
+  name: adamw
+  lr: 0.00001
+  lr_backbone: 0.000001
+  lr_head: 0.00001
+  weight_decay: 0.0001
+  weight_decay_head: 0.00001
+  momentum: 0.9
+  fused: false
+
+scheduler_aux:
+  name: none
+  t_max: 10
+  eta_min: 0.000001
+  step_size: 50
+  gamma: 0.1
+  milestones: [100, 150, 200]
+  warmup_ratio: 0.03
+  min_warmup_steps: 100
+  start_factor: 0.01
+  t_mult: 1
+
+# ---------------------------------------------------------------------------
+# Train-time loss
+# ---------------------------------------------------------------------------
+loss:
+  # Supported:
+  #   ce
+  #   bce
+  #   label_smoothing
+  #   focal
+  #   bsce
+  #   bsce_adaptive
+  name: bce
+
+  # Reduction for all implemented losses:
+  #   mean
+  #   sum
+  #   none
+  reduction: mean
+
+  # label_smoothing only.
+  smoothing: 0.1
+
+  # focal and bsce.
+  gamma: 2.0
+
+  # bsce and bsce_adaptive.
+  norm: 2.0
+  detach_weight: true
+
+  # bsce_adaptive only.
+  default_gamma: 1.0
+  low_conf_gamma: 0.5
+  mid_conf_gamma: 0.2
+  low_threshold: 0.2
+  mid_threshold: 0.5
+
+# ---------------------------------------------------------------------------
+# Metrics
+# ---------------------------------------------------------------------------
+metrics:
+  # Number of confidence bins for ECE and reliability diagrams.
+  ece_bins: 15
+
+  # Binary threshold for accuracy/F1-style metrics.
+  threshold: 0.5
+
+# ---------------------------------------------------------------------------
+# Post-hoc calibration
+# ---------------------------------------------------------------------------
+# Used only by:
+#   aigd calibrate --config configs/baselines/base_config.yaml
+calibration:
+  # Supported:
+  #   identity
+  #   temperature
+  #   temperature_scaling
+  method: temperature_scaling
+
+  # Validation logits used to fit the calibrator.
+  val_logits: outputs/base_experiment/logits/val.jsonl
+
+  # One path or a list of paths to calibrate after fitting on val_logits.
+  apply_logits:
+    - outputs/base_experiment/logits/test_id.jsonl
+    - outputs/base_experiment/logits/test_ood.jsonl
+
+  # Output folder for calibrated logits, metrics, and calibrator.json.
+  out_dir: outputs/base_experiment/calibrated
+
+  # Temperature scaling options.
+  init_temperature: 1.0
+  max_iter: 100

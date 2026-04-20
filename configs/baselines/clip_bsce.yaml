@@ -1,0 +1,53 @@
+data:
+  batch_size: 32
+  image_size: 224
+  normalization: clip
+  num_workers: 4
+  test_id: data/splits/test_id.jsonl
+  test_ood: data/splits/test_ood.jsonl
+  train: data/splits/train.jsonl
+  val: data/splits/val.jsonl
+experiment:
+  name: clip_bsce
+loss:
+  detach_weight: true
+  gamma: 1.0
+  name: bsce
+  norm: 2.0
+metrics:
+  ece_bins: 15
+  threshold: 0.5
+model:
+  dropout: 0.2
+  freeze_backbone: true
+  name: openai/clip-vit-large-patch14
+  num_classes: 2
+  num_frozen_blocks: 16
+  pretrained: true
+  train_layer_norm: true
+  type: clip
+optimizer:
+  fused: false
+  lr: 0.0001
+  lr_backbone: 1.0e-05
+  lr_head: 0.0001
+  name: adamw
+  weight_decay: 0.0001
+  weight_decay_head: 1.0e-05
+output_root: outputs
+scheduler:
+  name: none
+seed: 42
+training:
+  accelerator: auto
+  checkpoint_metric: val/auc
+  checkpoint_mode: max
+  devices: auto
+  epochs: 2
+  lightning_strategy: auto
+  log_every_n_steps: 20
+  precision: 32-true
+  save_top_k: 1
+  strategy: standard
+  sync_batchnorm: false
+  use_distributed_sampler: true

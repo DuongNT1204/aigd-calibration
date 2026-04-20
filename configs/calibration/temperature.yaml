@@ -1,0 +1,14 @@
+# Fit temperature on validation logits, then apply to ID/OOD logits.
+calibration:
+  method: temperature
+  val_logits: outputs/resnet50_bce/logits/val.jsonl
+  apply_logits:
+    - outputs/resnet50_bce/logits/test_id.jsonl
+    - outputs/resnet50_bce/logits/test_ood.jsonl
+  out_dir: outputs/resnet50_bce/temperature
+  init_temperature: 1.0
+  max_iter: 100
+
+metrics:
+  ece_bins: 15
+  threshold: 0.5

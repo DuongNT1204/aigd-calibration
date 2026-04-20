@@ -1,0 +1,57 @@
+seed: 42
+output_root: outputs
+
+experiment:
+  name: resnet50_bce
+
+data:
+  train: data/splits/train.jsonl
+  val: data/splits/val.jsonl
+  test_id: data/splits/test_id.jsonl
+  test_ood: data/splits/test_ood.jsonl
+  image_size: 224
+  batch_size: 32
+  num_workers: 4
+  normalization: imagenet
+
+model:
+  type: timm
+  name: resnet50
+  pretrained: true
+  freeze_backbone: false
+  dropout: 0.0
+  num_classes: 2
+
+loss:
+  name: bce
+
+optimizer:
+  name: adamw
+  lr: 0.0001
+  lr_backbone: 0.00001
+  lr_head: 0.0001
+  weight_decay: 0.0001
+  weight_decay_head: 0.00001
+  fused: false
+
+scheduler:
+  name: none
+
+training:
+  strategy: standard
+  epochs: 10
+  accelerator: auto
+  devices: auto
+  lightning_strategy: auto
+  sync_batchnorm: false
+  use_distributed_sampler: true
+  precision: 32-true
+  checkpoint_metric: val/auc
+  checkpoint_mode: max
+  save_top_k: 1
+  log_every_n_steps: 20
+  kl_weight: 1.0
+
+metrics:
+  ece_bins: 15
+  threshold: 0.5

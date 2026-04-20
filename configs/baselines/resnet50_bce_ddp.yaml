@@ -1,0 +1,65 @@
+# Example multi-GPU DDP config.
+# Adjust devices and batch_size for your machine.
+
+seed: 42
+output_root: outputs
+
+experiment:
+  name: resnet50_bce_ddp
+
+data:
+  train: data/splits/train.jsonl
+  val: data/splits/val.jsonl
+  test_id: data/splits/test_id.jsonl
+  test_ood: data/splits/test_ood.jsonl
+  image_size: 224
+
+  # This is per-GPU batch size in Lightning DDP.
+  batch_size: 32
+  num_workers: 4
+  normalization: imagenet
+
+model:
+  type: timm
+  name: resnet50
+  pretrained: true
+  freeze_backbone: false
+  dropout: 0.0
+  num_classes: 2
+
+training:
+  strategy: standard
+  epochs: 10
+
+  # Multi-GPU settings.
+  accelerator: gpu
+  devices: 2
+  lightning_strategy: ddp
+  sync_batchnorm: false
+  use_distributed_sampler: true
+
+  precision: 16-mixed
+  checkpoint_metric: val/auc
+  checkpoint_mode: max
+  save_top_k: 1
+  log_every_n_steps: 20
+  kl_weight: 1.0
+
+optimizer:
+  name: adamw
+  lr: 0.0001
+  lr_backbone: 0.00001
+  lr_head: 0.0001
+  weight_decay: 0.0001
+  weight_decay_head: 0.00001
+  fused: false
+
+scheduler:
+  name: none
+
+loss:
+  name: bce
+
+metrics:
+  ece_bins: 15
+  threshold: 0.5
